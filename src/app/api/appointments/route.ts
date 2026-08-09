@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getSessionFromCookies,
-  unauthorized,
+  unauthorizedClearSession,
 } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { ActiveDay } from "@/models/ActiveDay";
 import { Appointment } from "@/models/Appointment";
-import { User } from "@/models/User";
 import { isDayOpenByAdmin, TIME_SLOTS } from "@/lib/constants";
 import {
   filterMockAppointments,
-  findMockUserById,
   getMockAppointmentsForDate,
   getMockClosedSlots,
   getMockStore,
@@ -18,18 +15,22 @@ import {
   isMockMode,
   newMockId,
   type MockAppointment,
+  type MockUser,
 } from "@/lib/mock-store";
 import { notifyAdmins } from "@/lib/notifications";
+import { requireAuthUser } from "@/lib/require-user";
 import { getServiceBySlug } from "@/lib/services";
 import {
   expandAppointmentSlots,
   getAvailableStartTimes,
 } from "@/lib/scheduling";
+import { User } from "@/models/User";
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
+    const session = auth.session;
 
     const date = request.nextUrl.searchParams.get("date");
     const from = request.nextUrl.searchParams.get("from");
@@ -108,8 +109,9 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
+    const session = auth.session;
 
     const body = await request.json();
     const { date, time, serviceId, notes, name: nameInput } = body as {
@@ -140,8 +142,7 @@ export async function POST(request: NextRequest) {
     let userPhone = session.phone;
 
     if (isMockMode()) {
-      const user = findMockUserById(session.userId);
-      if (!user) return unauthorized();
+      const user = auth.doc as MockUser;
 
       if (!user.name) {
         const trimmed = nameInput?.trim();
@@ -222,8 +223,8 @@ export async function POST(request: NextRequest) {
     }
 
     await connectDB();
-    const user = await User.findById(session.userId);
-    if (!user) return unauthorized();
+    const user = await User.findById(auth.user.id);
+    if (!user) return unauthorizedClearSession();
 
     if (!user.name) {
       const trimmed = nameInput?.trim();

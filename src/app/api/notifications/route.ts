@@ -1,19 +1,19 @@
 import { NextResponse } from "next/server";
-import { getSessionFromCookies, unauthorized } from "@/lib/auth";
 import {
   listNotificationsForUser,
   markAllNotificationsRead,
   unreadCountForUser,
 } from "@/lib/notifications";
+import { requireAuthUser } from "@/lib/require-user";
 
 export async function GET() {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
     const [notifications, unreadCount] = await Promise.all([
-      listNotificationsForUser(session.userId),
-      unreadCountForUser(session.userId),
+      listNotificationsForUser(auth.user.id),
+      unreadCountForUser(auth.user.id),
     ]);
 
     return NextResponse.json({ notifications, unreadCount });
@@ -25,10 +25,10 @@ export async function GET() {
 
 export async function PATCH() {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
-    await markAllNotificationsRead(session.userId);
+    await markAllNotificationsRead(auth.user.id);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("PATCH /api/notifications error:", error);

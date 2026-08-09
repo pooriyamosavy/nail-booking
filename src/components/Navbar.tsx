@@ -35,6 +35,12 @@ export default function Navbar() {
       if (meRes.ok) {
         const data = await meRes.json();
         setUser(data.user);
+      } else if (meRes.status === 401 || meRes.status >= 500) {
+        setUser(null);
+        await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+        router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+        router.refresh();
+        return;
       } else {
         setUser(null);
       }
@@ -47,7 +53,7 @@ export default function Navbar() {
     } finally {
       setLoaded(true);
     }
-  }, [isAuthPage]);
+  }, [isAuthPage, pathname, router]);
 
   useEffect(() => {
     loadUser();

@@ -32,9 +32,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPublicPage) {
-    if (session) {
-      return NextResponse.redirect(new URL("/", request.url));
-    }
+    // Do not trust JWT alone — deleted users keep a cookie until /api/auth/me clears it.
+    // Login/register pages verify via SessionGuard / client me check.
     return NextResponse.next();
   }
 

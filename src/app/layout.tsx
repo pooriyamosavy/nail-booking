@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Vazirmatn } from "next/font/google";
 import Navbar from "@/components/Navbar";
 import PwaRegister from "@/components/PwaRegister";
+import SessionGuard from "@/components/SessionGuard";
 import { PAGE_CONTAINER_CLASS } from "@/lib/constants";
 import "./globals.css";
 
@@ -44,9 +45,11 @@ export default function RootLayout({
   return (
     <html lang="fa" dir="rtl">
       <body className={`${vazirmatn.variable} antialiased`}>
-        <Navbar />
-        <main className={`${PAGE_CONTAINER_CLASS} py-8`}>{children}</main>
-        <PwaRegister />
+        <SessionGuard>
+          <Navbar />
+          <main className={`${PAGE_CONTAINER_CLASS} py-8`}>{children}</main>
+          <PwaRegister />
+        </SessionGuard>
       </body>
     </html>
   );

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromCookies, unauthorized } from "@/lib/auth";
+import { unauthorizedClearSession } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { findMockUserById, isMockMode } from "@/lib/mock-store";
+import { isMockMode, type MockUser } from "@/lib/mock-store";
+import { requireAuthUser } from "@/lib/require-user";
 import { User, type PushSubscriptionData } from "@/models/User";
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
     const body = await request.json();
     const { endpoint, keys } = body as {
@@ -25,8 +26,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (isMockMode()) {
-      const user = findMockUserById(session.userId);
-      if (!user) return unauthorized();
+      const user = auth.doc as MockUser;
       user.pushSubscriptions = [
         ...user.pushSubscriptions.filter((s) => s.endpoint !== endpoint),
         sub,
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
     }
 
     await connectDB();
-    const user = await User.findById(session.userId);
-    if (!user) return unauthorized();
+    const user = await User.findById(auth.user.id);
+    if (!user) return unauthorizedClearSession();
 
     user.pushSubscriptions = [
       ...user.pushSubscriptions.filter(
@@ -55,15 +55,14 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
     const body = await request.json().catch(() => ({}));
     const { endpoint } = body as { endpoint?: string };
 
     if (isMockMode()) {
-      const user = findMockUserById(session.userId);
-      if (!user) return unauthorized();
+      const user = auth.doc as MockUser;
       if (endpoint) {
         user.pushSubscriptions = user.pushSubscriptions.filter(
           (s) => s.endpoint !== endpoint,
@@ -75,8 +74,8 @@ export async function DELETE(request: NextRequest) {
     }
 
     await connectDB();
-    const user = await User.findById(session.userId);
-    if (!user) return unauthorized();
+    const user = await User.findById(auth.user.id);
+    if (!user) return unauthorizedClearSession();
 
     if (endpoint) {
       user.pushSubscriptions = user.pushSubscriptions.filter(

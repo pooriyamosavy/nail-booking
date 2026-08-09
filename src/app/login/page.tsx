@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FormEvent, Suspense, useState } from "react";
+import { FormEvent, Suspense, useEffect, useState } from "react";
 
 function LoginForm() {
   const router = useRouter();
@@ -13,6 +13,29 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function checkExistingSession() {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        if (cancelled) return;
+        if (res.ok) {
+          router.replace(next.startsWith("/") ? next : "/");
+          return;
+        }
+        if (res.status === 401) {
+          await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void checkExistingSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [next, router]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();

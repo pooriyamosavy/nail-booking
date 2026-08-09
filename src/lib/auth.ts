@@ -100,6 +100,13 @@ export function unauthorized(message = "ورود لازم است") {
   return NextResponse.json({ error: message }, { status: 401 });
 }
 
+/** 401 response that also clears the session cookie (e.g. user deleted). */
+export function unauthorizedClearSession(message = "کاربر یافت نشد. دوباره وارد شوید") {
+  const response = NextResponse.json({ error: message, code: "USER_NOT_FOUND" }, { status: 401 });
+  clearSessionCookie(response);
+  return response;
+}
+
 export function forbidden(message = "دسترسی مجاز نیست") {
   return NextResponse.json({ error: message }, { status: 403 });
 }

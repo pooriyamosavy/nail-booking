@@ -2,46 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import {
   createSessionToken,
-  getSessionFromCookies,
   setSessionCookie,
-  unauthorized,
+  unauthorizedClearSession,
 } from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import {
-  findMockUserById,
-  isMockMode,
-} from "@/lib/mock-store";
+import { isMockMode, type MockUser } from "@/lib/mock-store";
 import { normalizePhone } from "@/lib/phone";
+import { requireAuthUser } from "@/lib/require-user";
 import { User } from "@/models/User";
 
 export async function GET() {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
-
-    if (isMockMode()) {
-      const user = findMockUserById(session.userId);
-      if (!user) return unauthorized();
-      return NextResponse.json({
-        user: {
-          id: user._id,
-          phone: user.phone,
-          name: user.name ?? null,
-          role: user.role,
-        },
-      });
-    }
-
-    await connectDB();
-    const user = await User.findById(session.userId);
-    if (!user) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
     return NextResponse.json({
       user: {
-        id: user._id.toString(),
-        phone: user.phone,
-        name: user.name ?? null,
-        role: user.role,
+        id: auth.user.id,
+        phone: auth.user.phone,
+        name: auth.user.name ?? null,
+        role: auth.user.role,
       },
     });
   } catch (error) {
@@ -52,8 +32,8 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
     const body = await request.json();
     const {
@@ -69,8 +49,7 @@ export async function PATCH(request: NextRequest) {
     };
 
     if (isMockMode()) {
-      const user = findMockUserById(session.userId);
-      if (!user) return unauthorized();
+      const user = auth.doc as MockUser;
 
       if (typeof name === "string") {
         user.name = name.trim() || undefined;
@@ -133,8 +112,8 @@ export async function PATCH(request: NextRequest) {
     }
 
     await connectDB();
-    const user = await User.findById(session.userId);
-    if (!user) return unauthorized();
+    const user = await User.findById(auth.user.id);
+    if (!user) return unauthorizedClearSession();
 
     if (typeof name === "string") {
       user.name = name.trim() || undefined;

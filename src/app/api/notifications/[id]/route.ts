@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromCookies, unauthorized } from "@/lib/auth";
 import { markNotificationRead } from "@/lib/notifications";
+import { requireAuthUser } from "@/lib/require-user";
 
 export async function PATCH(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const session = await getSessionFromCookies();
-    if (!session) return unauthorized();
+    const auth = await requireAuthUser();
+    if (!auth.ok) return auth.response;
 
     const { id } = await params;
-    const notification = await markNotificationRead(session.userId, id);
+    const notification = await markNotificationRead(auth.user.id, id);
     if (!notification) {
       return NextResponse.json({ error: "اعلان یافت نشد" }, { status: 404 });
     }
