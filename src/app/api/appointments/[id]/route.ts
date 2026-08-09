@@ -1,34 +1,61 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  forbidden,
+  getSessionFromCookies,
+  unauthorized,
+} from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
-import { Appointment } from "@/models/Appointment";
+import { Appointment, type AttendanceStatus } from "@/models/Appointment";
+import { createNotification } from "@/lib/notifications";
+import { getMockStore, isMockMode } from "@/lib/mock-store";
 
-function unauthorized() {
-  return NextResponse.json({ error: "رمز عبور مدیر نادرست است" }, { status: 401 });
-}
+const ATTENDANCE_LABELS: Record<AttendanceStatus, string> = {
+  unset: "نامشخص",
+  present: "حاضر",
+  absent: "غایب",
+};
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const adminPassword = request.headers.get("x-admin-password");
-    if (adminPassword !== process.env.ADMIN_PASSWORD) {
-      return unauthorized();
-    }
+    const session = await getSessionFromCookies();
+    if (!session) return unauthorized();
+    if (session.role !== "admin") return forbidden();
 
     const { id } = await params;
     const body = await request.json().catch(() => ({}));
-    const { status } = body as { status?: "approved" | "cancelled" };
+    const { status, attendance } = body as {
+      status?: "approved" | "cancelled";
+      attendance?: AttendanceStatus;
+    };
 
-    if (!status || !["approved", "cancelled"].includes(status)) {
+    if (!status && !attendance) {
+      return NextResponse.json(
+        { error: "status یا attendance لازم است" },
+        { status: 400 },
+      );
+    }
+
+    if (status && !["approved", "cancelled"].includes(status)) {
       return NextResponse.json(
         { error: "status must be approved or cancelled" },
         { status: 400 },
       );
     }
 
-    if (process.env.USE_MOCK_DATA === "true") {
-      const { getMockStore } = await import("@/lib/mock-store");
+    if (
+      attendance &&
+      !["unset", "present", "absent"].includes(attendance)
+    ) {
+      return NextResponse.json(
+        { error: "attendance نامعتبر است" },
+        { status: 400 },
+      );
+    }
+
+    if (isMockMode()) {
       const store = getMockStore();
       const index = store.appointments.findIndex((a) => a._id === id);
 
@@ -39,28 +66,91 @@ export async function PATCH(
         );
       }
 
+      const prev = store.appointments[index];
       store.appointments[index] = {
-        ...store.appointments[index],
-        status,
+        ...prev,
+        ...(status ? { status } : {}),
+        ...(attendance ? { attendance } : {}),
         updatedAt: new Date().toISOString(),
       };
 
-      return NextResponse.json(store.appointments[index]);
+      const updated = store.appointments[index];
+
+      if (updated.userId && status === "approved") {
+        await createNotification({
+          userId: updated.userId,
+          title: "نوبت تأیید شد",
+          body: `نوبت شما در ${updated.date} ساعت ${updated.time} تأیید شد.`,
+          type: "booking_approved",
+          meta: { appointmentId: updated._id },
+        });
+      }
+      if (updated.userId && status === "cancelled") {
+        await createNotification({
+          userId: updated.userId,
+          title: "نوبت لغو شد",
+          body: `نوبت شما در ${updated.date} ساعت ${updated.time} لغو شد.`,
+          type: "booking_cancelled",
+          meta: { appointmentId: updated._id },
+        });
+      }
+      if (updated.userId && attendance) {
+        await createNotification({
+          userId: updated.userId,
+          title: "وضعیت حضور به‌روز شد",
+          body: `وضعیت حضور نوبت ${updated.date}: ${ATTENDANCE_LABELS[attendance]}`,
+          type: "attendance_set",
+          meta: { appointmentId: updated._id, attendance },
+        });
+      }
+
+      return NextResponse.json(updated);
     }
 
     await connectDB();
 
-    const appointment = await Appointment.findByIdAndUpdate(
-      id,
-      { status },
-      { new: true },
-    ).lean();
+    const update: Record<string, unknown> = {};
+    if (status) update.status = status;
+    if (attendance) update.attendance = attendance;
+
+    const appointment = await Appointment.findByIdAndUpdate(id, update, {
+      new: true,
+    });
 
     if (!appointment) {
       return NextResponse.json(
         { error: "Appointment not found" },
         { status: 404 },
       );
+    }
+
+    const userId = appointment.userId?.toString();
+    if (userId && status === "approved") {
+      await createNotification({
+        userId,
+        title: "نوبت تأیید شد",
+        body: `نوبت شما در ${appointment.date} ساعت ${appointment.time} تأیید شد.`,
+        type: "booking_approved",
+        meta: { appointmentId: id },
+      });
+    }
+    if (userId && status === "cancelled") {
+      await createNotification({
+        userId,
+        title: "نوبت لغو شد",
+        body: `نوبت شما در ${appointment.date} ساعت ${appointment.time} لغو شد.`,
+        type: "booking_cancelled",
+        meta: { appointmentId: id },
+      });
+    }
+    if (userId && attendance) {
+      await createNotification({
+        userId,
+        title: "وضعیت حضور به‌روز شد",
+        body: `وضعیت حضور نوبت ${appointment.date}: ${ATTENDANCE_LABELS[attendance]}`,
+        type: "attendance_set",
+        meta: { appointmentId: id, attendance },
+      });
     }
 
     return NextResponse.json(appointment);

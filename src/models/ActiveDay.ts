@@ -1,4 +1,4 @@
-import mongoose, { Schema, models } from "mongoose";
+import mongoose, { Schema, models, model, type Model } from "mongoose";
 
 export interface IActiveDay {
   _id: mongoose.Types.ObjectId;
@@ -18,5 +18,6 @@ const ActiveDaySchema = new Schema<IActiveDay>(
   { timestamps: true },
 );
 
-export const ActiveDay =
-  models.ActiveDay || mongoose.model<IActiveDay>("ActiveDay", ActiveDaySchema);
+export const ActiveDay: Model<IActiveDay> =
+  (models.ActiveDay as Model<IActiveDay>) ||
+  model<IActiveDay>("ActiveDay", ActiveDaySchema);

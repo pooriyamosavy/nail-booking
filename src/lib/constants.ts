@@ -43,14 +43,12 @@ function jalCalLeap(jy: number): number {
 
 function jalCal(jy: number, withoutLeap = false) {
   const bl = breaks.length;
-  let gy = jy + 621;
+  const gy = jy + 621;
   let leapJ = -14;
   let jp = breaks[0];
   let jm: number;
   let jump = 0;
   let leap: number;
-  let leapG: number;
-  let march: number;
   let n: number;
   let i: number;
 
@@ -69,8 +67,8 @@ function jalCal(jy: number, withoutLeap = false) {
   leapJ = leapJ + div(n, 33) * 8 + div(mod(n, 33) + 3, 4);
   if (mod(jump, 33) === 4 && jump - n === 4) leapJ += 1;
 
-  leapG = div(gy, 4) - div((div(gy, 100) + 1) * 3, 4) - 150;
-  march = 20 + leapJ - leapG;
+  const leapG = div(gy, 4) - div((div(gy, 100) + 1) * 3, 4) - 150;
+  const march = 20 + leapJ - leapG;
 
   if (withoutLeap) return { gy, march };
 
@@ -168,31 +166,6 @@ export const TIME_SLOTS = (() => {
 
 export type TimeSlot = (typeof TIME_SLOTS)[number];
 
-export const SERVICES = [
-  { id: "classic-manicure", label: "مانیکور کلاسیک", durationMinutes: 60 },
-  { id: "gel-manicure", label: "مانیکور ژلی", durationMinutes: 75 },
-  { id: "acrylic", label: "ناخن اکریلیک", durationMinutes: 120 },
-  { id: "nail-art", label: "نقاشی ناخن", durationMinutes: 90 },
-  { id: "french", label: "فرنچ", durationMinutes: 60 },
-  { id: "pedicure", label: "پدیکور", durationMinutes: 90 },
-] as const;
-
-export type ServiceId = (typeof SERVICES)[number]["id"];
-
-export function getServiceById(id: string) {
-  return SERVICES.find((service) => service.id === id);
-}
-
-/** @deprecated use SERVICES */
-export const NAIL_TYPES = SERVICES.map((s) => s.id) as unknown as readonly string[];
-
-export type NailType = ServiceId;
-
-/** @deprecated use getServiceById */
-export const NAIL_TYPE_LABELS: Record<string, string> = Object.fromEntries(
-  SERVICES.map((s) => [s.id, s.label]),
-);
-
 export const APPOINTMENT_STATUS_LABELS = {
   pending: "در انتظار تأیید",
   approved: "تأیید شده",
@@ -202,10 +175,16 @@ export const APPOINTMENT_STATUS_LABELS = {
 
 export type AppointmentStatus = keyof typeof APPOINTMENT_STATUS_LABELS;
 
+export const ATTENDANCE_LABELS = {
+  unset: "نامشخص",
+  present: "حاضر",
+  absent: "غایب",
+} as const;
+
+export type AttendanceStatus = keyof typeof ATTENDANCE_LABELS;
+
 export const PERSIAN_WEEKDAYS = ["ش", "ی", "د", "س", "چ", "پ", "ج"] as const;
 
-export const PHONE_STORAGE_KEY = "nail-booking-phone";
-export const ADMIN_AUTH_KEY = "nail-booking-admin-auth";
 export const PAGE_CONTAINER_CLASS = "mx-auto w-full max-w-5xl px-6 md:px-10";
 
 export function formatDateKey(date: Date): string {

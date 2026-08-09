@@ -1,0 +1,12 @@
+{
+  "app": "nail-booking",
+  "platform": "next",
+  "port": 3000,
+  "next": {
+    "nodeVersion": "20",
+    "mirror": false
+  },
+  "build": {
+    "location": "germany"
+  }
+}

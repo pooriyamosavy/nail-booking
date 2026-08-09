@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  getSessionFromCookies,
+  unauthorized,
+} from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { ActiveDay } from "@/models/ActiveDay";
 import { Appointment } from "@/models/Appointment";
-import {
-  getServiceById,
-  isDayOpenByAdmin,
-  TIME_SLOTS,
-} from "@/lib/constants";
+import { User } from "@/models/User";
+import { isDayOpenByAdmin, TIME_SLOTS } from "@/lib/constants";
 import {
   filterMockAppointments,
+  findMockUserById,
   getMockAppointmentsForDate,
   getMockClosedSlots,
   getMockStore,
@@ -17,6 +19,8 @@ import {
   newMockId,
   type MockAppointment,
 } from "@/lib/mock-store";
+import { notifyAdmins } from "@/lib/notifications";
+import { getServiceBySlug } from "@/lib/services";
 import {
   expandAppointmentSlots,
   getAvailableStartTimes,
@@ -24,18 +28,46 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getSessionFromCookies();
+    if (!session) return unauthorized();
+
     const date = request.nextUrl.searchParams.get("date");
-    const phone = request.nextUrl.searchParams.get("phone");
     const from = request.nextUrl.searchParams.get("from");
+    const to = request.nextUrl.searchParams.get("to");
     const status = request.nextUrl.searchParams.get("status");
+    const mine = request.nextUrl.searchParams.get("mine") === "1";
+    const userIdParam = request.nextUrl.searchParams.get("userId");
+
+    const isAdmin = session.role === "admin";
+
+    if (!isAdmin && (date || userIdParam) && !mine) {
+      // users can only list their own unless mine=1 or month range for profile
+    }
+
+    let filterUserId: string | undefined;
+    if (!isAdmin || mine) {
+      filterUserId = session.userId;
+    } else if (userIdParam) {
+      filterUserId = userIdParam;
+    }
+
+    if (!isAdmin && !filterUserId) {
+      filterUserId = session.userId;
+    }
+
+    // Admin day view: date without user filter
+    if (isAdmin && date && !mine && !userIdParam) {
+      filterUserId = undefined;
+    }
 
     if (isMockMode()) {
       const store = getMockStore();
       const appointments = filterMockAppointments(store, {
         date: date ?? undefined,
-        phone: phone ?? undefined,
         from: date ? undefined : (from ?? undefined),
+        to: date ? undefined : (to ?? undefined),
         status: status ?? undefined,
+        userId: filterUserId,
       });
       return NextResponse.json(appointments);
     }
@@ -50,11 +82,14 @@ export async function GET(request: NextRequest) {
     }
     if (date) {
       filter.date = date;
-    } else if (from) {
-      filter.date = { $gte: from };
+    } else if (from || to) {
+      const dateRange: Record<string, string> = {};
+      if (from) dateRange.$gte = from;
+      if (to) dateRange.$lte = to;
+      filter.date = dateRange;
     }
-    if (phone) {
-      filter.phone = phone.trim();
+    if (filterUserId) {
+      filter.userId = filterUserId;
     }
 
     const appointments = await Appointment.find(filter)
@@ -73,24 +108,26 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getSessionFromCookies();
+    if (!session) return unauthorized();
+
     const body = await request.json();
-    const { date, time, name, serviceId, phone, notes } = body as {
+    const { date, time, serviceId, notes, name: nameInput } = body as {
       date?: string;
       time?: string;
-      name?: string;
       serviceId?: string;
-      phone?: string;
       notes?: string;
+      name?: string;
     };
 
-    if (!date || !time || !name || !serviceId || !phone) {
+    if (!date || !time || !serviceId) {
       return NextResponse.json(
-        { error: "همه فیلدهای الزامی را پر کنید" },
+        { error: "خدمت، تاریخ و ساعت الزامی است" },
         { status: 400 },
       );
     }
 
-    const service = getServiceById(serviceId);
+    const service = await getServiceBySlug(serviceId);
     if (!service) {
       return NextResponse.json({ error: "خدمت نامعتبر است" }, { status: 400 });
     }
@@ -99,7 +136,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ساعت نامعتبر است" }, { status: 400 });
     }
 
+    let userName: string | undefined;
+    let userPhone = session.phone;
+
     if (isMockMode()) {
+      const user = findMockUserById(session.userId);
+      if (!user) return unauthorized();
+
+      if (!user.name) {
+        const trimmed = nameInput?.trim();
+        if (!trimmed) {
+          return NextResponse.json(
+            { error: "نام برای اولین رزرو الزامی است" },
+            { status: 400 },
+          );
+        }
+        user.name = trimmed;
+        user.updatedAt = new Date().toISOString();
+      }
+      userName = user.name;
+      userPhone = user.phone;
+
       const store = getMockStore();
 
       if (!isDayActiveInMock(store, date)) {
@@ -137,23 +194,50 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
       const appointment: MockAppointment = {
         _id: newMockId(store),
+        userId: user._id,
         date,
         time,
-        name: name.trim(),
-        serviceId,
+        name: userName!,
+        serviceId: service.slug,
         durationMinutes: service.durationMinutes,
-        phone: phone.trim(),
+        price: service.price,
+        phone: userPhone,
         notes: notes?.trim() || undefined,
         status: "pending",
+        attendance: "unset",
         createdAt: now,
         updatedAt: now,
       };
 
       store.appointments.push(appointment);
+
+      await notifyAdmins(
+        "نوبت جدید",
+        `${userName} برای ${date} ساعت ${time} رزرو کرد`,
+        "booking_created",
+        { appointmentId: appointment._id },
+      );
+
       return NextResponse.json(appointment, { status: 201 });
     }
 
     await connectDB();
+    const user = await User.findById(session.userId);
+    if (!user) return unauthorized();
+
+    if (!user.name) {
+      const trimmed = nameInput?.trim();
+      if (!trimmed) {
+        return NextResponse.json(
+          { error: "نام برای اولین رزرو الزامی است" },
+          { status: 400 },
+        );
+      }
+      user.name = trimmed;
+      await user.save();
+    }
+    userName = user.name;
+    userPhone = user.phone;
 
     const activeDay = await ActiveDay.findOne({ date });
     if (!isDayOpenByAdmin(activeDay?.isActive)) {
@@ -193,15 +277,25 @@ export async function POST(request: NextRequest) {
     }
 
     const appointment = await Appointment.create({
+      userId: user._id,
       date,
       time,
-      name: name.trim(),
-      serviceId,
+      name: userName,
+      serviceId: service.slug,
       durationMinutes: service.durationMinutes,
-      phone: phone.trim(),
+      price: service.price,
+      phone: userPhone,
       notes: notes?.trim() || undefined,
       status: "pending",
+      attendance: "unset",
     });
+
+    await notifyAdmins(
+      "نوبت جدید",
+      `${userName} برای ${date} ساعت ${time} رزرو کرد`,
+      "booking_created",
+      { appointmentId: appointment._id.toString() },
+    );
 
     return NextResponse.json(appointment, { status: 201 });
   } catch (error) {

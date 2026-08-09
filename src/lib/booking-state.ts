@@ -1,13 +1,10 @@
-import { ServiceId } from "@/lib/constants";
-
-export type BookingStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type BookingStep = 1 | 2 | 3 | 4 | 5;
 
 export interface BookingProgress {
   step: BookingStep;
-  service?: ServiceId;
+  service?: string;
   date?: string;
   time?: string;
-  phone?: string;
   notes?: string;
 }
 
@@ -37,7 +34,7 @@ export function clearBookingProgress() {
 
 export function parseBookingStep(value: string | null): BookingStep {
   const step = Number(value);
-  if (step >= 1 && step <= 6) return step as BookingStep;
+  if (step >= 1 && step <= 5) return step as BookingStep;
   return 1;
 }
 

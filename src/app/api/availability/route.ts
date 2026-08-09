@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  forbidden,
+  getSessionFromCookies,
+  unauthorized,
+} from "@/lib/auth";
 import { connectDB } from "@/lib/mongodb";
 import { ActiveDay } from "@/models/ActiveDay";
 import { Appointment } from "@/models/Appointment";
@@ -28,6 +33,9 @@ function addClosedSlotsToOccupied(
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getSessionFromCookies();
+    if (!session) return unauthorized();
+
     const date = request.nextUrl.searchParams.get("date");
     if (!date) {
       return NextResponse.json(
@@ -117,13 +125,9 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const adminPassword = request.headers.get("x-admin-password");
-    if (adminPassword !== process.env.ADMIN_PASSWORD) {
-      return NextResponse.json(
-        { error: "رمز عبور مدیر نادرست است" },
-        { status: 401 },
-      );
-    }
+    const session = await getSessionFromCookies();
+    if (!session) return unauthorized();
+    if (session.role !== "admin") return forbidden();
 
     const body = await request.json();
     const { date, isActive, closedSlots } = body as {
