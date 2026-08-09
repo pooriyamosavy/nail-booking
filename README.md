@@ -29,6 +29,18 @@ Required:
 - `MONGODB_URI` — MongoDB connection (or `USE_MOCK_DATA=true`)
 - `JWT_SECRET` — session signing secret (16+ chars)
 - `ADMIN_PHONE` + `ADMIN_PASSWORD` — seeded admin account on first connect
+- `USE_MOCK_DATA=false` — required in production to use real MongoDB
+
+On HamDocker / Kubernetes, set these as **app environment variables** (do not commit secrets). Use the internal DB service host, for example:
+
+```text
+MONGODB_URI=mongodb://root:<password>@<db-service-name>:27017/my-app?authSource=admin
+USE_MOCK_DATA=false
+NEXT_PUBLIC_USE_MOCK_DATA=false
+JWT_SECRET=<long-random-secret>
+ADMIN_PHONE=09xxxxxxxxx
+ADMIN_PASSWORD=<admin-password>
+```
 
 Optional Web Push:
 
